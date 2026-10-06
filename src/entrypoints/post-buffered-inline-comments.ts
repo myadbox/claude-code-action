@@ -11,6 +11,7 @@
  */
 import { readFileSync, existsSync } from "fs";
 import { createOctokit } from "../github/api/client";
+import { redactSecrets } from "../github/utils/sanitizer";
 
 const BUFFER_PATH = "/tmp/inline-comments-buffer.jsonl";
 const SUMMARY_PATH = "/tmp/inline-review-summary.md";
@@ -121,7 +122,7 @@ async function postComment(
     owner,
     repo,
     pull_number,
-    body: c.body,
+    body: redactSecrets(c.body),
     path: c.path,
     side: c.side || "RIGHT",
     commit_id: c.commit_id || headSha,

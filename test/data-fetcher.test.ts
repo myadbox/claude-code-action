@@ -1215,7 +1215,10 @@ describe("fetchGitHubData integration with time filtering", () => {
                 {
                   id: "2",
                   databaseId: "2",
-                  author: { login: "scanner[bot]" },
+                  // GraphQL returns the bare login for App actors plus
+                  // __typename: "Bot". It does NOT append a "[bot]" suffix the
+                  // way REST does, so this mirrors a real payload.
+                  author: { __typename: "Bot", login: "scanner" },
                   body: "Pre-trigger bot review",
                   state: "COMMENTED",
                   submittedAt: "2024-01-15T11:00:00Z",
@@ -1774,6 +1777,49 @@ describe("fetchGitHubData integration with time filtering", () => {
 
     // Webhook says no body at trigger time — attacker-added GraphQL body must not be used
     expect(result.contextData.body).toBe("");
+  });
+
+  it("should not crash when GraphQL returns null files for a very large PR", async () => {
+    // GitHub declines to compute the diff for very large PRs: `files` comes
+    // back as null (with no errors entry) and `changedFiles` is misreported
+    // as 0. The fetch must degrade gracefully instead of throwing.
+    const mockOctokits = {
+      graphql: jest.fn().mockResolvedValue({
+        repository: {
+          pullRequest: {
+            number: 7912,
+            title: "Very large PR",
+            body: "PR body",
+            author: { login: "author" },
+            createdAt: "2024-01-15T10:00:00Z",
+            state: "OPEN",
+            labels: { nodes: [] },
+            comments: { nodes: [] },
+            files: null,
+            reviews: { nodes: [] },
+          },
+        },
+        user: { login: "trigger-user" },
+      }),
+      rest: {
+        pulls: {
+          listFiles: jest.fn().mockResolvedValue({ data: [] }),
+        },
+      },
+    };
+
+    const result = await fetchGitHubData({
+      octokits: mockOctokits as any,
+      repository: "test-owner/test-repo",
+      prNumber: "7912",
+      isPR: true,
+      triggerUsername: "trigger-user",
+      triggerTime: "2024-01-15T12:00:00Z",
+    });
+
+    // No file list is available, so the PR is processed without file-level context.
+    expect(result.changedFiles).toEqual([]);
+    expect(result.changedFilesWithSHA).toEqual([]);
   });
 });
 
